@@ -16,6 +16,8 @@ struct Bucket {
     std::vector<unsigned int> numbers;
     // significant figure of this bucket
     unsigned int sig_fig;
+    std::vector<Bucket> categorize();
+    std::vector<unsigned int> sort();
     Bucket() = default;
     Bucket(std::vector<unsigned int> nums, unsigned int sf = 0) : numbers(nums), sig_fig(sf) {};
     Bucket(unsigned int sf) : numbers(), sig_fig(sf) {}

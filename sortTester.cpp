@@ -12,7 +12,7 @@ int main() {
 
 
 
-	unsigned int totalNumbers =	5000000;
+	unsigned int totalNumbers =	500000;
 
 	unsigned int printIndex =	25900;
 

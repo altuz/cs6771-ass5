@@ -5,111 +5,9 @@
 #include <stack>
 #include <thread>
 #include <iostream>
-#include <condition_variable>
+#include <random>
 
-class semaphore
-{
-private:
-    std::mutex mutex_;
-    std::condition_variable condition_;
-    unsigned int count_; // Initialized as locked.
-
-public:
-    semaphore(unsigned int c = 0) : count_(c) {};
-    semaphore(semaphore &&other) : count_(other.count_) {};
-    void notify() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        ++count_;
-        condition_.notify_one();
-    }
-
-    void wait() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        while(!count_) {
-            // Handle spurious wake-ups.
-            condition_.wait(lock);
-        }
-        --count_;
-    }
-
-    void wait2(unsigned int c) {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        while(count_) {
-            condition_.wait(lock);
-        }
-        count_ = c;
-    }
-
-    void notify2() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        --count_;
-        if(!count_) {
-            condition_.notify_one();
-        }
-    }
-
-    void notify3(unsigned int c) {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        count_ = c;
-        condition_.notify_all();
-    }
-    bool try_wait() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        if(count_) {
-            --count_;
-            return true;
-        }
-        return false;
-    }
-
-    void fill(unsigned int c) {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        count_ = c;
-        condition_.notify_all();
-    }
-
-    void wait_empty() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        while (count_) {
-            // std::cout << count_ << " waiting to be empty\n";
-            condition_.wait(lock);
-        }
-    }
-
-    void take_items(unsigned int c) {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        while(!count_) {
-            // Handle spurious wake-ups.
-            // std::cout <<"FUCK THIS SHIT\n";
-            condition_.wait(lock);
-        }
-        // std::cout << "attempting to take " << c << ", while count_ = " << count_ << "\n";
-        count_ -= c;
-        if(!count_) {
-            // std::cout << "bucket is empty, notify all\n";
-            // std::cout << "waking producer\n";
-            condition_.notify_all();
-        }
-    }
-
-    void wake_all() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        // std::cout << "WAKING ALL\n";
-        count_ = 0;
-        condition_.notify_all();
-    }
-
-    void try_take() {
-        std::unique_lock<decltype(mutex_)> lock(mutex_);
-        while(!count_) {
-            // Handle spurious wake-ups.
-            condition_.wait(lock);
-        }
-    }
-};
-
-unsigned int getDigit(unsigned int value, unsigned int positionFromLeft)
-{
+unsigned int get_digit(unsigned int value, unsigned int positionFromLeft) {
     int posFromRight = 1;
     {
         unsigned int v = value;
@@ -122,152 +20,125 @@ unsigned int getDigit(unsigned int value, unsigned int positionFromLeft)
     value %= 10;
     return value > 0 ? value : -value;
 }
-
+// Get top of vector.
+// WHY DOES POP NOT RETURN TOP AS WELL???
 Bucket vector_pop(std::vector<Bucket> &queue) {
     auto res = std::move(queue.back());
     queue.pop_back();
     return res;
 }
-
+// Parallel bucket sort!!
 void BucketSort::sort(unsigned int numCores) {
-    numCores = 8;
-    // have queue of buckets
-    // all threads will work on one bucket at a time
-    std::vector<Bucket> bucket_queue;
-    unsigned int curr_sf = 0;
-    unsigned long long pow_of_10 = 0;
-    bucket_queue.emplace_back(this->numbersToSort);
-    Bucket front_bucket;
-    // 10 sub buckets, 1 mutex each
-    std::vector<Bucket> sub_buckets;
-    std::array<std::mutex, 10> mutexes;
-    // final sorted list, 1 mutex
-    std::vector<unsigned int> sorted;
-    std::mutex smutex;
-    // semaphores
-    semaphore empty(numCores-1);
-    semaphore full(0l);
-    semaphore bucket_status(0);
-    semaphore thread_status(0);
-    bool finished = false;
-
-    //
+    Bucket initial_bucket(this->numbersToSort);
+    // categorize initial bucket using current thread.
+    std::vector<Bucket> buckets(std::move(initial_bucket.categorize()));
     std::vector<std::thread> thread_list;
-
-    for (unsigned int i = 0; i < 10; ++i) {
-        sub_buckets.emplace_back(0);
-    }
-    // for (unsigned int i = 0; i < numCores - 1; ++i) {
-    //     thread_list.emplace_back([&front_bucket, &pow_of_10, &curr_sf, &mutexes, &sub_buckets, &smutex, &sorted, &empty, &full, &bucket_queue, &finished, i, &numCores, &idx_count, &cmutex]
-    //     () {
-    //         while (true) {
-    //             full.wait(i);
-    //             if (finished)
-    //                 break;
-    //             std::vector<unsigned int> &numbers = front_bucket.numbers;
-    //             while (true) {
-    //                 unsigned int j = 0;
-    //                 {
-    //                     std::lock_guard<std::mutex> lock(cmutex);
-    //                     j = idx_count++;
-    //                 }
-    //                 if (j >= numbers.size())
-    //                     break;
-    //                 if ((unsigned long) numbers[j] > pow_of_10) {
-    //                     unsigned int nth_digit = getDigit(numbers[j], curr_sf + 1);
-    //                     std::lock_guard<std::mutex> lock(mutexes[nth_digit]);
-    //                     sub_buckets[nth_digit].numbers.push_back(numbers[j]);
-    //                 }
-    //                 else {
-    //                     std::lock_guard<std::mutex> lock(smutex);
-    //                     sorted.push_back(numbers[j]);
-    //                 }
-    //             }
-    //             empty.notify2();
-    //         }
-    //     });
-    // }
-    std::vector<semaphore> semaphores;
-    for (unsigned int i = 0; i < numCores-1; ++i) {
-        semaphores.push_back(0);
-    }
-    for (unsigned int i = 0; i < numCores-1; ++i) {
+    std::vector<std::vector<unsigned int>> sorted_buckets(10);
+    // spawn thread and have each thread sort each bucket, no race condition
+    for (auto i = 0u; i < numCores - 1; ++i) {
         thread_list.emplace_back(
-            [&bucket_status, &front_bucket, i, numCores, &sorted, &smutex, &mutexes, &pow_of_10, &curr_sf, &sub_buckets, &finished, &semaphores]{
-                while (true) {
-                    semaphores[i].wait();
-                    if (finished)
-                        break;
-                    std::vector<unsigned int> &numbers = front_bucket.numbers;
-                    unsigned int local_count = 0;
-                    for (unsigned int j = i; j < numbers.size(); j += numCores) {
-                        ++local_count;
-                        // std::cout << "comparing " << numbers[j] << " with " << pow_of_10 << "\n";
-                        if ((unsigned long long) numbers[j] > pow_of_10) {
-                            unsigned int nth_digit = getDigit(numbers[j], curr_sf + 1);
-                            std::lock_guard<std::mutex> lock(mutexes[nth_digit]);
-                            sub_buckets[nth_digit].numbers.push_back(numbers[j]);
-                        }
-                        else {
-                            std::lock_guard<std::mutex> lock(smutex);
-                            sorted.push_back(numbers[j]);
-                        }
-                    }
-                    // block
-                    bucket_status.take_items(local_count);
+            [&buckets, &sorted_buckets, i, numCores] {
+                // no race condition here, since each thread will take unique indices
+                for (auto j = i; j < buckets.size() - 1; j += numCores) {
+                    std::vector<unsigned int> sorted_bucket(std::move(buckets[j].sort()));
+                    sorted_buckets[j] = std::move(sorted_bucket);
                 }
             }
         );
     }
+    // give some work to current thread
+    for (auto j = numCores - 1; j < buckets.size() - 1; j += numCores) {
+        std::vector<unsigned int> sorted_bucket(std::move(buckets[j].sort()));
+        sorted_buckets[j] = std::move(sorted_bucket);
+    }
+    // join thread
+    for (auto &t : thread_list) {
+        t.join();
+    }
+    // reassemble results
+    // buckets[10] won't contain anything but....
+    std::vector<unsigned int> sorted = std::move(buckets[10].numbers);
+    for (auto vectors : sorted_buckets) {
+        sorted.insert(sorted.end(), vectors.begin(), vectors.end());
+    }
+    this->numbersToSort = std::move(sorted);
+}
 
+// Bucket sort current bucket, iteratively
+// Similar logic to categorize, but keeps doing it until there is nothing left to categorize
+std::vector<unsigned int> Bucket::sort() {
+    std::vector<unsigned int> sorted;
+    // initialize queue
+    std::vector<Bucket> bucket_queue;
+    bucket_queue.emplace_back(this->numbers, this->sig_fig);
+    // initialize sub bucket
+    std::vector<Bucket> sub_buckets;
+    for (auto i = 0u; i < 11; ++i) {
+        sub_buckets.emplace_back(0);
+    }
+    // run until no more bucket in queue
     while (!bucket_queue.empty()) {
-        // get current bucket
-        front_bucket = std::move(vector_pop(bucket_queue));
-        // get the next power of ten, to know which digit to inspect
-        curr_sf = front_bucket.sig_fig;
-        pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf + 1));
-        bucket_status.fill(front_bucket.numbers.size());
-        for (unsigned int i = 0; i < semaphores.size() && i < front_bucket.numbers.size(); ++i) {
-            semaphores[i].notify();
+        auto front_bucket = vector_pop(bucket_queue);
+        // Early exit condition
+        // There are more to this, but we risk putting more overhead
+        // Basically if all numbers in queue are the same, we could do this.
+        if (front_bucket.numbers.size() == 1) {
+            sorted.push_back(front_bucket.numbers[0]);
+            continue;
         }
-        std::vector<unsigned int> &numbers = front_bucket.numbers;
-        unsigned int local_count = 0;
-        for (unsigned int j = numCores - 1; j < numbers.size(); j += numCores) {
-            ++local_count;
-            // std::cout << "comparing " << numbers[j] << " with " << pow_of_10 << "\n";
-            if ((unsigned long long) numbers[j] > pow_of_10) {
-                unsigned int nth_digit = getDigit(numbers[j], curr_sf + 1);
-                std::lock_guard<std::mutex> lock(mutexes[nth_digit]);
-                sub_buckets[nth_digit].numbers.push_back(numbers[j]);
+        // get sig_fig and 10^sig_fig
+        auto curr_sf = front_bucket.sig_fig;
+        auto pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf + 1));
+        // basically what we did in categorize
+        for (unsigned int i : front_bucket.numbers) {
+            if ((unsigned long long) i > pow_of_10) {
+                auto nth_digit = get_digit(i, curr_sf + 1);
+                sub_buckets[nth_digit].numbers.push_back(i);
             }
             else {
-                std::lock_guard<std::mutex> lock(smutex);
-                sorted.push_back(numbers[j]);
+                sub_buckets[10].numbers.push_back(i);
             }
         }
-        // block
-        if (local_count != 0) {
-            bucket_status.take_items(local_count);
-        }
-        // for (auto &s : semaphores) {
-        //     s.notify();
-        // }
-        bucket_status.wait_empty();
-        // There are ten sub buckets, 1 -> 9 and None.
-        // std::vector<unsigned int> &numbers = front_bucket.numbers;
-        for (int j = 9; j >= 0; --j) {
-            Bucket &sub_bucket = sub_buckets[j];
+        // for each of those sub buckets except the 11th, place it back to queue.
+        // 11th can be put straight to sorted
+        for (int i = sub_buckets.size() - 2; i >= 0; --i) {
+            auto &sub_bucket = sub_buckets[i];
             if (sub_bucket.numbers.size() == 0) {
                 continue;
             }
             sub_bucket.sig_fig = curr_sf + 1;
             bucket_queue.emplace_back(std::move(sub_bucket));
         }
+
+        if (sub_buckets[10].numbers.size() != 0) {
+            sorted.insert(sorted.end(), sub_buckets[10].numbers.begin(), sub_buckets[10].numbers.end());
+            sub_buckets[10].numbers.clear();
+        }
     }
-    finished = true;
-    for (unsigned int i = 0; i < semaphores.size(); ++i) {
-        semaphores[i].notify();
-        thread_list[i].join();
+    return sorted;
+}
+
+// categorize the bucket into 11 buckets.
+// depending on the digit on the sig_fig^th digit.
+//      sub buckets include 0-9,
+//      the 11th sub bucket includes numbers < 10^(curr_sf + 1)
+std::vector<Bucket> Bucket::categorize() {
+    std::vector<Bucket> sub_buckets(11);
+    auto curr_sf = this->sig_fig;
+    auto pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf + 1));
+    // categorize numbers to buckets
+    for (auto i : this->numbers) {
+        if ((unsigned long long) i > pow_of_10) {
+            auto nth_digit = get_digit(i, curr_sf + 1);
+            sub_buckets[nth_digit].numbers.push_back(i);
+        }
+        else {
+            sub_buckets[10].numbers.push_back(i);
+        }
     }
-    this->numbersToSort = std::move(sorted);
+    // increment significant figure for new buckets
+    for (auto &b : sub_buckets) {
+        b.sig_fig = curr_sf + 1;
+    }
+    return sub_buckets;
 }
