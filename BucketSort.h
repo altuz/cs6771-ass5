@@ -19,7 +19,10 @@ struct Bucket {
     Bucket() = default;
     Bucket(std::vector<unsigned int> nums, unsigned int sf = 0) : numbers(nums), sig_fig(sf) {};
     Bucket(unsigned int sf) : numbers(), sig_fig(sf) {}
-    Bucket(Bucket &&other) : numbers(std::move(other.numbers)), sig_fig(other.sig_fig){}
+    Bucket(Bucket &&other) : numbers(std::move(other.numbers)), sig_fig(other.sig_fig){
+        other.numbers.clear();
+        other.sig_fig = 0;
+    }
     Bucket &operator=(Bucket &&other) = default;
     ~Bucket() = default;
 };

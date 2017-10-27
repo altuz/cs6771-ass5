@@ -25,7 +25,7 @@ public:
     void wait() {
         std::unique_lock<decltype(mutex_)> lock(mutex_);
         while(!count_) {
-            // Handle spurious wake-ups. 
+            // Handle spurious wake-ups.
             //std::cout << "waiting\n";
             condition_.wait(lock);
         }
@@ -40,6 +40,8 @@ public:
         }
         return false;
     }
+
+    
 };
 
 unsigned int getDigit(unsigned int value, unsigned int positionFromLeft)
@@ -102,7 +104,7 @@ void BucketSort::sort(unsigned int numCores) {
         }
         empty.notify();
         empty.wait();
-        
+
         for (int i = 9; i >= 0; --i) {
             Bucket &sub_bucket = sub_buckets[i];
             if (sub_bucket.numbers.size() == 0) {

@@ -14,7 +14,7 @@ int main() {
 
 	unsigned int totalNumbers =	5000000;
 
-	unsigned int printIndex =	259000;
+	unsigned int printIndex =	25900;
 
 
 
