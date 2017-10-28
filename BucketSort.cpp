@@ -109,7 +109,7 @@ std::vector<unsigned int> Bucket::sort() {
             sub_bucket.sig_fig = curr_sf + 1;
             bucket_queue.emplace_back(std::move(sub_bucket));
         }
-
+        // 11th bucket is sorted!
         if (sub_buckets[10].numbers.size() != 0) {
             sorted.insert(sorted.end(), sub_buckets[10].numbers.begin(), sub_buckets[10].numbers.end());
             sub_buckets[10].numbers.clear();
