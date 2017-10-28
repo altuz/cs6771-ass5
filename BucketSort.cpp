@@ -7,15 +7,21 @@
 #include <iostream>
 #include <random>
 
-unsigned int get_digit(unsigned int value, unsigned int positionFromLeft) {
-    int posFromRight = 1;
-    {
-        unsigned int v = value;
-        while (v /= 10)
-            ++posFromRight;
-    }
-    posFromRight -= positionFromLeft - 1;
-    while (--posFromRight)
+// Given an integer, get the nth digit from the left
+unsigned int get_digit(unsigned int value, unsigned int left_pos) {
+    // calculate the number of digits in value
+    // make a copy of value,
+    // keep dividing it by 10 until it becomes 0, and count the number of times you divide by 10
+    auto digit_length = 1;
+    auto v = value;
+    while (v /= 10)
+        ++digit_length;
+    // using the length of value, and the position from left,
+    // calculate the position from right
+    auto pos_right = digit_length - (left_pos - 1);
+    // divide value by 10 until the right most digit is the digit we want to get
+    // that value % 10 = the digit
+    while (--pos_right)
         value /= 10;
     value %= 10;
     return value > 0 ? value : -value;
@@ -57,10 +63,13 @@ void BucketSort::sort(unsigned int numCores) {
     }
     // reassemble results
     // buckets[10] won't contain anything but....
+    //      -- I lied, it will contain 0s
     std::vector<unsigned int> sorted = std::move(buckets[10].numbers);
+    
     for (auto vectors : sorted_buckets) {
         sorted.insert(sorted.end(), vectors.begin(), vectors.end());
     }
+    
     this->numbersToSort = std::move(sorted);
 }
 
@@ -88,7 +97,7 @@ std::vector<unsigned int> Bucket::sort() {
         }
         // get sig_fig and 10^sig_fig
         auto curr_sf = front_bucket.sig_fig;
-        auto pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf + 1));
+        auto pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf));
         // basically what we did in categorize
         for (unsigned int i : front_bucket.numbers) {
             if ((unsigned long long) i > pow_of_10) {
@@ -125,7 +134,7 @@ std::vector<unsigned int> Bucket::sort() {
 std::vector<Bucket> Bucket::categorize() {
     std::vector<Bucket> sub_buckets(11);
     auto curr_sf = this->sig_fig;
-    auto pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf + 1));
+    auto pow_of_10 = (unsigned long long) std::round(std::pow(10, curr_sf));
     // categorize numbers to buckets
     for (auto i : this->numbers) {
         if ((unsigned long long) i > pow_of_10) {
